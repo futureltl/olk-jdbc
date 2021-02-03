@@ -140,9 +140,11 @@ abstract class AbstractConnectionProperty<T>
         checkArgument(!value.isEmpty(), "value is empty");
         return value;
     };
+    
+    protected static final Converter<Integer> INTEGER_CONVERTER = value -> Integer.valueOf(value);
 
     protected static final Converter<File> FILE_CONVERTER = File::new;
-
+    
     protected static final Converter<Boolean> BOOLEAN_CONVERTER = value -> {
         switch (value.toLowerCase(ENGLISH)) {
             case "true":

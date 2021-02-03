@@ -13,6 +13,7 @@
  */
 package io.prestosql.jdbc;
 
+import com.asiainfo.dacp.jdbc.extend.DacpConsts;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
@@ -51,7 +52,9 @@ import static io.prestosql.jdbc.ConnectionProperties.KERBEROS_PRINCIPAL;
 import static io.prestosql.jdbc.ConnectionProperties.KERBEROS_REMOTE_SERVICE_NAME;
 import static io.prestosql.jdbc.ConnectionProperties.KERBEROS_SERVICE_PRINCIPAL_PATTERN;
 import static io.prestosql.jdbc.ConnectionProperties.KERBEROS_USE_CANONICAL_HOSTNAME;
+import static io.prestosql.jdbc.ConnectionProperties.PAGE_SIZE;
 import static io.prestosql.jdbc.ConnectionProperties.PASSWORD;
+import static io.prestosql.jdbc.ConnectionProperties.REQUEST_INTERVAL;
 import static io.prestosql.jdbc.ConnectionProperties.SOCKS_PROXY;
 import static io.prestosql.jdbc.ConnectionProperties.SSL;
 import static io.prestosql.jdbc.ConnectionProperties.SSL_KEY_STORE_PASSWORD;
@@ -59,6 +62,9 @@ import static io.prestosql.jdbc.ConnectionProperties.SSL_KEY_STORE_PATH;
 import static io.prestosql.jdbc.ConnectionProperties.SSL_TRUST_STORE_PASSWORD;
 import static io.prestosql.jdbc.ConnectionProperties.SSL_TRUST_STORE_PATH;
 import static io.prestosql.jdbc.ConnectionProperties.USER;
+import static io.prestosql.jdbc.ConnectionProperties.TASK_TIMEOUT;
+import static io.prestosql.jdbc.ConnectionProperties.TOKEN_EXPIRES;
+
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
@@ -127,6 +133,31 @@ final class PrestoDriverUri
             throws SQLException
     {
         return USER.getRequiredValue(properties);
+    }
+    
+    public String getPassword() throws SQLException
+    {
+        return PASSWORD.getValue(properties).orElse(null);
+    }
+    
+    public int getPageSize() throws SQLException
+    {
+        return PAGE_SIZE.getValue(properties).orElse(DacpConsts.DEFAULT_PAGE_SIZE);
+    }
+    
+    public int getExpires() throws SQLException
+    {
+        return TOKEN_EXPIRES.getValue(properties).orElse(DacpConsts.DEFAULT_TOKEN_EXPIRES);
+    }
+    
+    public int getTaskTimeout() throws SQLException
+    {
+        return TASK_TIMEOUT.getValue(properties).orElse(DacpConsts.DEFAULT_TASK_TIMEOUT);
+    }
+    
+    public int getRequestInterval() throws SQLException
+    {
+        return REQUEST_INTERVAL.getValue(properties).orElse(DacpConsts.DEFAULT_REQUEST_INTERVAL);
     }
 
     public Optional<String> getApplicationNamePrefix()

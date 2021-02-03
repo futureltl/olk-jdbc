@@ -13,16 +13,18 @@
  */
 package io.prestosql.jdbc;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.primitives.Ints;
-import io.airlift.units.Duration;
-import io.prestosql.client.ClientSelectedRole;
-import io.prestosql.client.ClientSession;
-import io.prestosql.client.ServerInfo;
-import io.prestosql.client.StatementClient;
+import static com.asiainfo.dacp.jdbc.extend.ResultTypeEnum.OLK;
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Strings.nullToEmpty;
+import static com.google.common.collect.Maps.fromProperties;
+import static io.airlift.json.JsonCodec.jsonCodec;
+import static java.lang.String.format;
+import static java.net.HttpURLConnection.HTTP_OK;
+import static java.nio.charset.StandardCharsets.US_ASCII;
+import static java.util.Objects.requireNonNull;
+import static java.util.concurrent.TimeUnit.DAYS;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.MINUTES;
 
 import java.net.URI;
 import java.nio.charset.CharsetEncoder;
@@ -56,19 +58,40 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Strings.nullToEmpty;
-import static com.google.common.collect.Maps.fromProperties;
-import static java.lang.String.format;
-import static java.nio.charset.StandardCharsets.US_ASCII;
-import static java.util.Objects.requireNonNull;
-import static java.util.concurrent.TimeUnit.DAYS;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.MINUTES;
+import com.asiainfo.dacp.client.QueryParams;
+import com.asiainfo.dacp.jdbc.extend.DacpConsts;
+import com.asiainfo.dacp.jdbc.extend.DacpException;
+import com.asiainfo.dacp.jdbc.extend.ExecuteParams;
+import com.asiainfo.dacp.jdbc.extend.ExecuteResults;
+import com.asiainfo.dacp.jdbc.extend.LoginParams;
+import com.asiainfo.dacp.jdbc.extend.LoginResults;
+import com.asiainfo.dacp.jdbc.extend.ResultCodeEnum;
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Splitter;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.primitives.Ints;
+
+import io.airlift.json.JsonCodec;
+import io.airlift.units.Duration;
+import io.prestosql.client.ClientException;
+import io.prestosql.client.ClientSelectedRole;
+import io.prestosql.client.ClientSession;
+import io.prestosql.client.JsonResponse;
+import io.prestosql.client.ServerInfo;
+import io.prestosql.client.StatementClient;
+import okhttp3.HttpUrl;
+import okhttp3.Request;
+import okhttp3.RequestBody;
 
 public class PrestoConnection
         implements Connection
 {
+    private static final JsonCodec<LoginParams> LOGIN_PARAMS_CODEC = jsonCodec(LoginParams.class);
+    private static final JsonCodec<LoginResults> LOGIN_RESULTS_CODEC = jsonCodec(LoginResults.class);
+    private static final JsonCodec<ExecuteParams> EXECUTE_PARAMS_CODEC = jsonCodec(ExecuteParams.class);
+    private static final JsonCodec<ExecuteResults> EXECUTE_RESULTS_CODEC = jsonCodec(ExecuteResults.class);
+    
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicBoolean autoCommit = new AtomicBoolean(true);
     private final AtomicInteger isolationLevel = new AtomicInteger(TRANSACTION_READ_UNCOMMITTED);
@@ -82,6 +105,14 @@ public class PrestoConnection
     private final AtomicReference<ServerInfo> serverInfo = new AtomicReference<>();
     private final AtomicLong nextStatementId = new AtomicLong(1);
 
+    private final LoginParams loginParams;
+    private final AtomicReference<String> connToken = new AtomicReference<>();
+    private final AtomicReference<String> refOlkURL = new AtomicReference<>();
+
+    private final int pageSize;
+    private final int requestInterval;
+    private AtomicReference<ClientSession> clientSession = new AtomicReference<>();
+    
     private final URI jdbcUri;
     private final URI httpUri;
     private final String user;
@@ -110,6 +141,10 @@ public class PrestoConnection
 
         timeZoneId.set(ZoneId.systemDefault());
         locale.set(Locale.getDefault());
+        // for dacp
+        this.loginParams = new LoginParams(uri.getUser(), uri.getPassword(), uri.getCatalog(), uri.getExpires());
+        this.pageSize = uri.getPageSize();
+        this.requestInterval = uri.getRequestInterval();
     }
 
     @Override
@@ -659,9 +694,86 @@ public class PrestoConnection
                 getIsolationLevel(isolationLevel.get()),
                 readOnly.get() ? "ONLY" : "WRITE");
     }
+    
 
-    StatementClient startQuery(String sql, Map<String, String> sessionPropertiesOverride)
+    void handleException(@SuppressWarnings("rawtypes") JsonResponse response) throws DacpException {
+        try {
+            int statusCode = response.getStatusCode();
+            if (HTTP_OK != statusCode) {
+                throw new DacpException(String.format("http response code %d", statusCode));
+            }
+
+            if (!response.hasValue()) {
+                throw new DacpException("http responseBody is empty.");
+            }
+        } catch (DacpException e) {
+            this.connToken.set(null);
+            throw e;
+        }
+    }
+
+    void handleException(String code, String message) throws DacpException {
+        if (!ResultCodeEnum.SUCCESS.getCode().equals(code)) {
+            throw new DacpException(message);
+        }
+    }
+
+    void updateToken(String token, String olkURL) {
+        this.connToken.set(token);
+        this.refOlkURL.set(olkURL);
+        ClientSession session = this.clientSession.get();
+        if (null != session) {
+            QueryParams lastQueryParams = session.getQueryParams();
+            QueryParams nextQueryParams = new QueryParams(lastQueryParams.getTaskId(), lastQueryParams.getType(), token,
+                    lastQueryParams.getPageNum(), lastQueryParams.getPageSize());
+            session.setQueryParams(nextQueryParams);
+            session.setOlkURL(olkURL);
+        }
+    }
+
+    public void initConnection() throws DacpException {
+        Request request = buildRequest(LOGIN_PARAMS_CODEC.toJson(this.loginParams), DacpConsts.LOGIN_URI);
+        JsonResponse<LoginResults> response = JsonResponse.execute(LOGIN_RESULTS_CODEC, queryExecutor.getHttpClient(),
+                request);
+        handleException(response);
+        LoginResults loginResults = response.getValue();
+        handleException(loginResults.getCode(), loginResults.getMsg());
+        updateToken(loginResults.getAccessToken(), loginResults.getOlkURL());
+    }
+
+    ExecuteResults executeAsync(String sql) throws DacpException {
+        ExecuteParams executeParams = new ExecuteParams(sql, this.connToken.get());
+        Request request = buildRequest(EXECUTE_PARAMS_CODEC.toJson(executeParams), DacpConsts.EXECUTE_URI);
+        JsonResponse<ExecuteResults> response = JsonResponse.execute(EXECUTE_RESULTS_CODEC,
+                queryExecutor.getHttpClient(), request);
+        handleException(response);
+        ExecuteResults result = response.getValue();
+        handleException(result.getCode(), result.getErrDetail());
+        return result;
+    }
+
+    Request buildRequest(String formatedJson, String encodedPath) {
+        HttpUrl url = HttpUrl.get(httpUri);
+        if (url == null) {
+            throw new ClientException(String.format("Invalid URL: %s", httpUri));
+        }
+
+        url = url.newBuilder().encodedPath(encodedPath).build();
+        Request.Builder builder = new Request.Builder().url(url)
+                .post(RequestBody.create(DacpConsts.MEDIA_TYPE_JSON, formatedJson));
+        return builder.build();
+    }    
+
+    StatementClient startQuery(String sql, Map<String, String> sessionPropertiesOverride) throws DacpException
     {
+        if (null == this.connToken.get()) {
+            initConnection();
+        }
+
+        ExecuteResults executeResults = executeAsync(sql);
+        QueryParams queryParams = new QueryParams(executeResults.getTaskId(), executeResults.getType(),
+                this.connToken.get(), DacpConsts.DEFAULT_PAGE_NUM, this.pageSize);
+        
         String source = "presto-jdbc";
         String applicationName = clientInfo.get("ApplicationName");
         if (applicationNamePrefix.isPresent()) {
@@ -703,7 +815,15 @@ public class PrestoConnection
                 ImmutableMap.copyOf(roles),
                 extraCredentials,
                 transactionId.get(),
-                timeout);
+                timeout,
+                queryParams, 
+                this.refOlkURL.get());
+        this.clientSession.set(session);
+        
+        if (OLK.toString().equalsIgnoreCase(executeResults.getType())) {
+            System.out.println("start query olkSQL= " + executeResults.getOlkSQL());
+            return queryExecutor.startQuery(session, executeResults.getOlkSQL());
+        }
 
         return queryExecutor.startQuery(session, sql);
     }

@@ -62,4 +62,8 @@ class QueryExecutor
         }
         return response.getValue();
     }
+    
+    public OkHttpClient getHttpClient() {
+        return httpClient;
+    }
 }

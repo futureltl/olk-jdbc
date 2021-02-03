@@ -33,6 +33,7 @@ import javax.annotation.concurrent.ThreadSafe;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.time.ZoneId;
@@ -45,6 +46,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static com.asiainfo.dacp.jdbc.extend.ResultTypeEnum.OLK;
 import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.net.HttpHeaders.USER_AGENT;
@@ -98,6 +100,9 @@ class StatementClientV1
     private final String clientCapabilities;
 
     private final AtomicReference<State> state = new AtomicReference<>(State.RUNNING);
+    
+    // for dacp
+    private final ClientSession session;
 
     public StatementClientV1(OkHttpClient httpClient, ClientSession session, String query)
     {
@@ -111,23 +116,42 @@ class StatementClientV1
         this.requestTimeoutNanos = session.getClientRequestTimeout();
         this.user = session.getUser();
         this.clientCapabilities = Joiner.on(",").join(ClientCapabilities.values());
+        this.session = session;
+        
+        
+        if (isPrestoType()) { 
+            Request request = buildQueryRequest(session, query);
 
-        Request request = buildQueryRequest(session, query);
+            JsonResponse<QueryResults> response = JsonResponse.execute(QUERY_RESULTS_CODEC, httpClient, request);
+            if ((response.getStatusCode() != HTTP_OK) || !response.hasValue()) {
+                state.compareAndSet(State.RUNNING, State.CLIENT_ERROR);
+                throw requestFailedException("starting query", request, response);
+            }
 
-        JsonResponse<QueryResults> response = JsonResponse.execute(QUERY_RESULTS_CODEC, httpClient, request);
-        if ((response.getStatusCode() != HTTP_OK) || !response.hasValue()) {
-            state.compareAndSet(State.RUNNING, State.CLIENT_ERROR);
-            throw requestFailedException("starting query", request, response);
+            processResponse(response.getHeaders(), response.getValue());
         }
-
-        processResponse(response.getHeaders(), response.getValue());
+    }
+    
+    public boolean isPrestoType() {
+        if (null == this.session) {
+            return false;
+        }
+        
+        return OLK.getType().equalsIgnoreCase(this.session.getQueryParams().getType());
     }
 
     private Request buildQueryRequest(ClientSession session, String query)
     {
-        HttpUrl url = HttpUrl.get(session.getServer());
+        // HttpUrl url = HttpUrl.get(session.getServer());
+        HttpUrl url = null;
+        try {
+            url = HttpUrl.get(new URI(session.getOlkURL()));
+        } catch (URISyntaxException e) {
+            throw new ClientException(String.format("Invalid olk server url %s", session.getOlkURL()));
+        }
+        
         if (url == null) {
-            throw new ClientException("Invalid server URL: " + session.getServer());
+            throw new ClientException(String.format("Invalid olk server url %s", session.getOlkURL()));
         }
         url = url.newBuilder().encodedPath("/v1/statement").build();
 

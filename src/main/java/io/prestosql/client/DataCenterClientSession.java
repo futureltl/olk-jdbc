@@ -36,7 +36,7 @@ public class DataCenterClientSession
 
     private DataCenterClientSession(URI server, String user, String source, Optional<String> traceToken, Set<String> clientTags, String clientInfo, String catalog, String schema, String path, ZoneId timeZone, Locale locale, Map<String, String> resourceEstimates, Map<String, String> properties, Map<String, String> preparedStatements, Map<String, ClientSelectedRole> roles, Map<String, String> extraCredentials, String transactionId, Duration clientRequestTimeout, Duration maxAnticipatedDelay, boolean compressionEnabled, TypeManager typeManager)
     {
-        super(server, user, source, traceToken, clientTags, clientInfo, catalog, schema, path, timeZone, locale, resourceEstimates, properties, preparedStatements, roles, extraCredentials, transactionId, clientRequestTimeout);
+        super(server, user, source, traceToken, clientTags, clientInfo, catalog, schema, path, timeZone, locale, resourceEstimates, properties, preparedStatements, roles, extraCredentials, transactionId, clientRequestTimeout, null, null);
         this.maxAnticipatedDelay = maxAnticipatedDelay;
         this.compressionEnabled = compressionEnabled;
         this.typeManager = typeManager;

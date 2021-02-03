@@ -38,6 +38,10 @@ final class ConnectionProperties
 {
     public static final ConnectionProperty<String> USER = new User();
     public static final ConnectionProperty<String> PASSWORD = new Password();
+    public static final ConnectionProperty<Integer> TOKEN_EXPIRES = new TokenExpire();
+    public static final ConnectionProperty<Integer> PAGE_SIZE = new PageSize();
+    public static final ConnectionProperty<Integer> TASK_TIMEOUT = new TaskTimeout();
+    public static final ConnectionProperty<Integer> REQUEST_INTERVAL = new RequestInterval();
     public static final ConnectionProperty<HostAndPort> SOCKS_PROXY = new SocksProxy();
     public static final ConnectionProperty<HostAndPort> HTTP_PROXY = new HttpProxy();
     public static final ConnectionProperty<String> APPLICATION_NAME_PREFIX = new ApplicationNamePrefix();
@@ -59,6 +63,10 @@ final class ConnectionProperties
     private static final Set<ConnectionProperty<?>> ALL_PROPERTIES = ImmutableSet.<ConnectionProperty<?>>builder()
             .add(USER)
             .add(PASSWORD)
+            .add(TOKEN_EXPIRES)
+            .add(PAGE_SIZE)
+            .add(TASK_TIMEOUT)
+            .add(REQUEST_INTERVAL)
             .add(SOCKS_PROXY)
             .add(HTTP_PROXY)
             .add(APPLICATION_NAME_PREFIX)
@@ -126,6 +134,38 @@ final class ConnectionProperties
         }
     }
 
+    private static class TokenExpire extends AbstractConnectionProperty<Integer>
+    {
+        public TokenExpire() 
+        {
+            super("expires", NOT_REQUIRED, ALLOWED, INTEGER_CONVERTER);
+        }
+    }
+    
+    private static class PageSize extends AbstractConnectionProperty<Integer>
+    {
+        public PageSize() 
+        {
+            super("pageSize", NOT_REQUIRED, ALLOWED, INTEGER_CONVERTER);
+        }
+    }
+    
+    private static class TaskTimeout extends AbstractConnectionProperty<Integer>
+    {
+        public TaskTimeout() 
+        {
+            super("taskTimeout", NOT_REQUIRED, ALLOWED, INTEGER_CONVERTER);
+        }
+    }
+    
+    private static class RequestInterval extends AbstractConnectionProperty<Integer>
+    {
+        public RequestInterval() 
+        {
+            super("interval", NOT_REQUIRED, ALLOWED, INTEGER_CONVERTER);
+        }
+    }    
+    
     private static class SocksProxy
             extends AbstractConnectionProperty<HostAndPort>
     {

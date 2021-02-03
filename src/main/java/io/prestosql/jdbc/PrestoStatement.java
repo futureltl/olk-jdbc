@@ -13,6 +13,7 @@
  */
 package io.prestosql.jdbc;
 
+import com.asiainfo.dacp.jdbc.extend.DacpException;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.primitives.Ints;
 import io.prestosql.client.ClientException;
@@ -267,7 +268,7 @@ public class PrestoStatement
             warningsManager.addWarnings(client.finalStatusInfo().getWarnings());
             return false;
         }
-        catch (ClientException e) {
+        catch (DacpException | ClientException e) {
             throw new SQLException(e.getMessage(), e);
         }
         catch (RuntimeException e) {

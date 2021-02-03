@@ -13,9 +13,10 @@
  */
 package io.prestosql.client;
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import io.airlift.units.Duration;
+import static com.google.common.base.MoreObjects.toStringHelper;
+import static com.google.common.base.Preconditions.checkArgument;
+import static java.nio.charset.StandardCharsets.US_ASCII;
+import static java.util.Objects.requireNonNull;
 
 import java.net.URI;
 import java.nio.charset.CharsetEncoder;
@@ -26,10 +27,11 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
 
-import static com.google.common.base.MoreObjects.toStringHelper;
-import static com.google.common.base.Preconditions.checkArgument;
-import static java.nio.charset.StandardCharsets.US_ASCII;
-import static java.util.Objects.requireNonNull;
+import com.asiainfo.dacp.client.QueryParams;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
+
+import io.airlift.units.Duration;
 
 public class ClientSession
 {
@@ -51,6 +53,9 @@ public class ClientSession
     private final Map<String, String> extraCredentials;
     private final String transactionId;
     private final Duration clientRequestTimeout;
+    // for dacp
+    private QueryParams queryParams;
+    private String olkURL;
 
     public static Builder builder(ClientSession clientSession)
     {
@@ -82,7 +87,9 @@ public class ClientSession
             Map<String, ClientSelectedRole> roles,
             Map<String, String> extraCredentials,
             String transactionId,
-            Duration clientRequestTimeout)
+            Duration clientRequestTimeout,
+            QueryParams queryParams,
+            String olkURL)
     {
         this.server = requireNonNull(server, "server is null");
         this.user = user;
@@ -102,6 +109,9 @@ public class ClientSession
         this.roles = ImmutableMap.copyOf(requireNonNull(roles, "roles is null"));
         this.extraCredentials = ImmutableMap.copyOf(requireNonNull(extraCredentials, "extraCredentials is null"));
         this.clientRequestTimeout = clientRequestTimeout;
+        // for dacp
+        this.queryParams = queryParams;
+        this.olkURL = olkURL;
 
         for (String clientTag : clientTags) {
             checkArgument(!clientTag.contains(","), "client tag cannot contain ','");
@@ -229,6 +239,22 @@ public class ClientSession
     {
         return clientRequestTimeout;
     }
+    
+    public QueryParams getQueryParams() {
+        return queryParams;
+    }
+    
+    public void setQueryParams(QueryParams queryParams) {
+        this.queryParams = queryParams;
+    }
+    
+    public String getOlkURL() {
+        return olkURL;
+    }
+
+    public void setOlkURL(String olkURL) {
+        this.olkURL = olkURL;
+    }
 
     @Override
     public String toString()
@@ -270,6 +296,9 @@ public class ClientSession
         private Map<String, String> credentials;
         private String transactionId;
         private Duration clientRequestTimeout;
+        // for dacp
+        private QueryParams queryParams;
+        private String olkURL;
 
         private Builder(ClientSession clientSession)
         {
@@ -292,6 +321,8 @@ public class ClientSession
             credentials = clientSession.getExtraCredentials();
             transactionId = clientSession.getTransactionId();
             clientRequestTimeout = clientSession.getClientRequestTimeout();
+            queryParams = clientSession.getQueryParams();
+            olkURL = clientSession.getOlkURL();
         }
 
         public Builder withCatalog(String catalog)
@@ -368,7 +399,9 @@ public class ClientSession
                     roles,
                     credentials,
                     transactionId,
-                    clientRequestTimeout);
+                    clientRequestTimeout,
+                    queryParams,
+                    olkURL);
         }
     }
 }

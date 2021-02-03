@@ -28,10 +28,28 @@ import static java.util.Collections.unmodifiableList;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
 
-final class FixJsonDataUtils
+public final class FixJsonDataUtils
 {
     private FixJsonDataUtils() {}
 
+    public static Iterable<List<Object>> fixData(int columnNum, Iterable<List<Object>> data)
+    {
+        if (data == null) {
+            return null;
+        }
+        ImmutableList.Builder<List<Object>> rows = ImmutableList.builder();
+        for (List<Object> row : data) {
+            checkArgument(row.size() == columnNum, "row/column size mismatch");
+            List<Object> newRow = new ArrayList<>();
+            for (int i = 0; i < row.size(); i++) {
+                // newRow.add(fixValue(signatures.get(i), row.get(i)));
+                newRow.add(String.class.cast("" + row.get(i)));
+            }
+            rows.add(unmodifiableList(newRow)); // allow nulls in list
+        }
+        return rows.build();
+    }
+    
     public static Iterable<List<Object>> fixData(List<Column> columns, Iterable<List<Object>> data)
     {
         if (data == null) {

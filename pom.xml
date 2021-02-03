@@ -144,10 +144,8 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
-                            <finalName>hetu-jdbc-${project.version}</finalName>
                             <createSourcesJar>true</createSourcesJar>
                             <shadeSourcesContent>true</shadeSourcesContent>
-                            <dependencyReducedPomLocation>${project.build.directory}/pom.xml</dependencyReducedPomLocation>
                             <relocations>
                                 <relocation>
                                     <pattern>io.prestosql.client</pattern>
@@ -202,7 +200,6 @@
                                 <filter>
                                     <artifact>*:*</artifact>
                                     <excludes>
-                                        
                                         <exclude>META-INF/maven/**</exclude>
                                         <exclude>META-INF/services/com.fasterxml.**</exclude>
                                         <exclude>LICENSE</exclude>
